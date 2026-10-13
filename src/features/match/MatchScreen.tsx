@@ -111,6 +111,9 @@ export function MatchScreen({
               <div className="mx-auto mb-4 h-1 w-9 rounded-full bg-white/25" />
               <h2 className="mb-4 text-lg font-semibold tracking-tight text-white">Where to watch</h2>
               <ProviderChips movieId={movie.id} region={room.settings.region} />
+              <p className="mt-4 text-center text-[11px] text-white/40">
+                Streaming data powered by JustWatch via TMDB. This product uses the TMDB API but is not endorsed or certified by TMDB.
+              </p>
             </motion.div>
           </>
         )}
