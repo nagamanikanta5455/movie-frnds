@@ -234,7 +234,7 @@ function WaitingRoom({
   room: Room; uid: string; isHost: boolean; starting: boolean; error: string | null; onStart: () => void;
 }) {
   const [copied, setCopied] = useState(false);
-  const link = `${window.location.origin}/r/${room.id}`;
+  const link = window.location.href;
   const count = room.participantIds.length;
   const hostName = room.participants[room.hostId]?.name ?? 'the host';
 
