@@ -1,6 +1,6 @@
 import { initializeApp } from 'firebase/app';
-import { getFirestore } from 'firebase/firestore';
-import { getAuth, signInAnonymously } from 'firebase/auth';
+import { getAuth, initializeAuth, browserSessionPersistence, signInAnonymously } from 'firebase/auth';
+import { getFirestore, initializeFirestore } from 'firebase/firestore';
 
 const firebaseConfig = {
   apiKey: "AIzaSyDlnII-arohTlmCoKYhy9zj25PMWoygj_I",
@@ -13,6 +13,23 @@ const firebaseConfig = {
 
 
 export const app = initializeApp(firebaseConfig);
-export const db = getFirestore(app);
-export const auth = getAuth(app);
+
+function makeAuth() {
+  try {
+    return initializeAuth(app, { persistence: browserSessionPersistence });
+  } catch {
+    return getAuth(app);
+  }
+}
+
+function makeDb() {
+  try {
+    return initializeFirestore(app, { experimentalAutoDetectLongPolling: true });
+  } catch {
+    return getFirestore(app);
+  }
+}
+
+export const auth = makeAuth();
+export const db = makeDb();
 export const loginAnonymously = () => signInAnonymously(auth);

@@ -5,11 +5,8 @@ import { ArrowRight, Clapperboard } from 'lucide-react';
 import { useAnonAuth } from '@/features/auth/useAnonAuth';
 import { Screen, glassInput, primaryBtn } from '@/components/Screen';
 import { parseRoomCode } from '@/lib/roomCode';
+import { getSavedName, saveName } from '@/lib/storage';
 import { createRoom } from './rooms.service';
-
-const NAME_KEY = 'mnm:name';
-const readName = () => { try { return localStorage.getItem(NAME_KEY) ?? ''; } catch { return ''; } };
-const saveName = (n: string) => { try { localStorage.setItem(NAME_KEY, n); } catch { /* private mode */ } };
 
 const SPRING = { type: 'spring', stiffness: 300, damping: 28 } as const;
 
@@ -19,7 +16,7 @@ export function Landing() {
 const uid = user?.uid;
 
   // Create
-  const [name, setName] = useState(readName);
+  const [name, setName] = useState(getSavedName);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 

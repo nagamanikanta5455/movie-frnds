@@ -12,16 +12,28 @@ export function useRoom(roomId: string, uid: string | null) {
   const [swipes, setSwipes] = useState<Record<string, SwipeDoc>>({});
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<Error | null>(null);
+  const [reconnecting, setReconnecting] = useState(false);
 
   useEffect(() => {
     if (!uid) return;
     const unsubRoom = onSnapshot(
       doc(db, 'rooms', roomId),
+      { includeMetadataChanges: true },
       (snap) => {
-        setRoom(snap.exists() ? ({ id: snap.id, ...snap.data() } as Room) : null);
+        if (!snap.exists()) {
+          if (snap.metadata.fromCache) return;
+          setRoom(null);
+        } else {
+          setRoom({ id: snap.id, ...snap.data() } as Room);
+        }
+        setReconnecting(snap.metadata.fromCache);
         setLoading(false);
       },
-      setError,
+      (err) => {
+        console.error('[room listener]', err);
+        setError(err);
+        setLoading(false);
+      },
     );
     const unsubSwipes = onSnapshot(
       collection(db, 'rooms', roomId, 'swipes'),
@@ -119,7 +131,7 @@ export function useRoom(roomId: string, uid: string | null) {
   }, [flush]);
 
   return {
-    room, swipes, loading, error,
+    room, swipes, loading, error, reconnecting,
     matches, exhausted, closest,
     myProgress: uid ? swipes[uid]?.progress ?? 0 : 0,
     recordSwipe,

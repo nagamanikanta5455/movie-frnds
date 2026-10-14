@@ -1,15 +1,22 @@
 import type { MovieCard } from '@/types/room';
 
 const BASE = 'https://api.themoviedb.org/3';
-const TOKEN = import.meta.env.VITE_TMDB_TOKEN; 
+const API_KEY = import.meta.env.VITE_TMDB_API_KEY as string | undefined;
 
 async function tmdb<T>(path: string, params: Record<string, string | number> = {}): Promise<T> {
-  const qs = new URLSearchParams(Object.entries(params).map(([k, v]) => [k, String(v)]));
-  const res = await fetch(`${BASE}${path}?${qs}`, { 
-    headers: { Authorization: `Bearer ${TOKEN}` } 
-  });
-  if (!res.ok) throw new Error(`TMDB ${res.status}`);
-  return res.json();
+  if (!API_KEY) throw new Error('TMDB token missing (VITE_TMDB_API_KEY)');
+
+  const qs = new URLSearchParams({ ...params, api_key: API_KEY });
+  const ctrl = new AbortController();
+  const timer = setTimeout(() => ctrl.abort(), 10_000);
+
+  try {
+    const res = await fetch(`${BASE}${path}?${qs}`, { signal: ctrl.signal });
+    if (!res.ok) throw new Error(`TMDB ${res.status}`);
+    return (await res.json()) as T;
+  } finally {
+    clearTimeout(timer);
+  }
 }
 
 export async function buildDeck(opts: { genreIds: number[]; providerIds: number[]; region: string; round?: number }): Promise<MovieCard[]> {
@@ -26,7 +33,7 @@ export async function buildDeck(opts: { genreIds: number[]; providerIds: number[
       ...(opts.providerIds.length && { with_watch_providers: opts.providerIds.join('|') }),
     }),
   ));
-  
+
   const seen = new Set<number>();
   return pages.flatMap((p) => p.results)
     .filter((m) => m.poster_path && !seen.has(m.id) && seen.add(m.id))
@@ -37,6 +44,7 @@ export async function buildDeck(opts: { genreIds: number[]; providerIds: number[
       rating: m.vote_average, genreIds: m.genre_ids,
     }));
 }
+
 export async function getProviders(movieId: number, region: string) {
   const r = await tmdb<{ results: Record<string, any> }>(`/movie/${movieId}/watch/providers`);
   const x = r.results[region];

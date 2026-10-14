@@ -1,12 +1,15 @@
 import { useState, type FormEvent } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { AnimatePresence, motion } from 'framer-motion';
-import { Check, Share2 } from 'lucide-react';
+import { Check, Copy, Share2 } from 'lucide-react';
 import { useAnonAuth } from '@/features/auth/useAnonAuth';
 import { Screen, glassInput, primaryBtn, secondaryBtn } from '@/components/Screen';
 import { SwipeDeck } from '@/features/swipe/SwipeDeck';
 import { MatchScreen } from '@/features/match/MatchScreen';
 import { NoMatchScreen } from '@/features/match/NoMatchScreen';
+import { friendlyError } from '@/lib/async';
+import { useCopy } from '@/lib/copy';
+import { getSavedName, saveName } from '@/lib/storage';
 import type { MovieCard, Room, SwipeDoc } from '@/types/room';
 import { useRoom } from './useRoom';
 import { joinRoom, pickMovie, startRound } from './rooms.service';
@@ -35,13 +38,14 @@ export function Lobby() {
   const [error, setError] = useState<string | null>(null);
 
   async function handleStart() {
-    if (!room) return;
+    if (!room || starting) return;
     setStarting(true);
     setError(null);
     try {
       await startRound(room);
-    } catch {
-      setError("Couldn't load movies. Try again.");
+    } catch (e) {
+      console.error('[startRound]', e);
+      setError(friendlyError(e));
     } finally {
       setStarting(false);
     }
@@ -165,9 +169,7 @@ function Closed({ title, body }: { title: string; body: string }) {
 /* ------------------------------ Name Gate --------------------------------- */
 
 function NameGate({ room, uid }: { room: Room; uid: string }) {
-  const [name, setName] = useState(() => {
-    try { return localStorage.getItem('mnm:name') ?? ''; } catch { return ''; }
-  });
+  const [name, setName] = useState(getSavedName);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -181,7 +183,7 @@ function NameGate({ room, uid }: { room: Room; uid: string }) {
     setError(null);
     try {
       const clean = name.trim();
-      try { localStorage.setItem('mnm:name', clean); } catch { /* private mode */ }
+      saveName(clean);
       await joinRoom(room.id, uid, clean);
     } catch {
       setError("Couldn't join. The room may have started.");
@@ -233,7 +235,7 @@ function WaitingRoom({
 }: {
   room: Room; uid: string; isHost: boolean; starting: boolean; error: string | null; onStart: () => void;
 }) {
-  const [copied, setCopied] = useState(false);
+  const { copied: codeCopied, copy: copyCode } = useCopy(2000);
   const link = window.location.href;
   const count = room.participantIds.length;
   const hostName = room.participants[room.hostId]?.name ?? 'the host';
@@ -243,9 +245,7 @@ function WaitingRoom({
       if (navigator.share) {
         await navigator.share({ title: 'Movie Night', text: 'Join my movie night', url: link });
       } else {
-        await navigator.clipboard.writeText(link);
-        setCopied(true);
-        setTimeout(() => setCopied(false), 1800);
+        await copyCode(link);
       }
     } catch { /* share sheet dismissed */ }
   }
@@ -258,12 +258,55 @@ function WaitingRoom({
         transition={SPRING}
         className="flex flex-col items-center text-center"
       >
-        <p className="text-sm font-medium uppercase tracking-[0.18em] text-white/50">Room code</p>
-        <h1 className="mt-2 text-5xl font-semibold tabular-nums tracking-[0.12em]">{room.id}</h1>
+        <div className="mt-6 mb-8 flex flex-col items-center">
+          <p
+            aria-live="polite"
+            className={`text-sm font-medium uppercase tracking-[0.18em] transition-colors ${
+              codeCopied ? 'text-white' : 'text-white/50'
+            }`}
+          >
+            {codeCopied ? 'Copied!' : 'Room code · tap to copy'}
+          </p>
+
+          <h1 className="mt-2">
+            <button
+              type="button"
+              onClick={() => copyCode(room.id)}
+              aria-label={codeCopied ? 'Room code copied' : `Copy room code ${room.id}`}
+              className="inline-flex items-center gap-3 rounded-2xl px-3 py-1 transition active:scale-[0.97]"
+            >
+              <span className="text-5xl font-semibold tabular-nums tracking-[0.12em]">{room.id}</span>
+              <span className="grid h-8 w-8 place-items-center rounded-full bg-white/10 text-white/70 ring-1 ring-inset ring-white/10">
+                <AnimatePresence mode="wait" initial={false}>
+                  {codeCopied ? (
+                    <motion.span
+                      key="ok"
+                      initial={{ scale: 0.5, opacity: 0 }}
+                      animate={{ scale: 1, opacity: 1 }}
+                      exit={{ scale: 0.5, opacity: 0 }}
+                      className="text-white"
+                    >
+                      <Check size={16} strokeWidth={3} />
+                    </motion.span>
+                  ) : (
+                    <motion.span
+                      key="copy"
+                      initial={{ scale: 0.5, opacity: 0 }}
+                      animate={{ scale: 1, opacity: 1 }}
+                      exit={{ scale: 0.5, opacity: 0 }}
+                    >
+                      <Copy size={16} />
+                    </motion.span>
+                  )}
+                </AnimatePresence>
+              </span>
+            </button>
+          </h1>
+        </div>
 
         <button onClick={share} className={`${secondaryBtn} mt-6 flex items-center justify-center gap-2`}>
           <AnimatePresence mode="wait" initial={false}>
-            {copied ? (
+            {codeCopied ? (
               <motion.span key="ok" initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }}
                 exit={{ opacity: 0, y: -6 }} className="flex items-center gap-2">
                 <Check size={16} /> Link copied

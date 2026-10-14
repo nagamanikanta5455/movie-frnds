@@ -1,5 +1,6 @@
 import { doc, setDoc, serverTimestamp, updateDoc, arrayUnion } from 'firebase/firestore';
 import { db } from '@/lib/firebase';
+import { withTimeout } from '@/lib/async';
 import { buildDeck } from '@/features/tmdb/tmdb.client';
 import type { Room } from '@/types/room';
 
@@ -47,7 +48,11 @@ export async function pickMovie(roomId: string, movieId: number) {
 
 export async function startRound(room: Room) {
   const nextRound = Math.floor((room.deck?.length || 0) / 40) + 1;
-  const newMovies = await buildDeck({ ...room.settings, round: nextRound });
+  const newMovies = await withTimeout(
+    buildDeck({ ...room.settings, round: nextRound }),
+    12_000,
+    'Loading movies',
+  );
 
   await updateDoc(doc(db, 'rooms', room.id), {
     deck: [...(room.deck || []), ...newMovies],
