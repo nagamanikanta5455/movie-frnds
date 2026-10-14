@@ -22,6 +22,7 @@ export interface Room {
   participants: Record<string, { name: string; hue: number }>;
   deck: MovieCard[];
   matchedMovieId: number | null;
+  matchedMovieIds?: number[];
   round?: number;
   createdAt: Timestamp;
 }

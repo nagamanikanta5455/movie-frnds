@@ -74,7 +74,7 @@ interface Props {
   matches?: MovieCard[]; // New prop for all matches
 }
 
-export function MatchScreen({ room, isHost, onNextRound, starting, error, uid, matches }: Props) {
+export function MatchScreen({ room, isHost, onNextRound, starting, error, uid }: Props) {
   const navigate = useNavigate();
   const reduce = useReducedMotion();
   
@@ -91,10 +91,13 @@ export function MatchScreen({ room, isHost, onNextRound, starting, error, uid, m
     navigate('/');
   };
 
-  // Use all matches if available, otherwise fallback to the single ID in the room
-  const displayMovies = matches && matches.length > 0 
-    ? matches 
-    : [room.deck.find((m) => m.id === room.matchedMovieId)].filter(Boolean) as MovieCard[];
+  // Use the database array so every device shows the same matches.
+  const displayMovies = room.matchedMovieIds && room.matchedMovieIds.length > 0
+    ? room.matchedMovieIds
+      .map((id) => room.deck.find((m) => m.id === id))
+      .filter((movie): movie is MovieCard => movie !== undefined)
+    : [room.deck.find((m) => m.id === room.matchedMovieId)]
+      .filter((movie): movie is MovieCard => movie !== undefined);
 
   const movie = displayMovies[activeIndex];
 

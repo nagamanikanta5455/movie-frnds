@@ -102,7 +102,7 @@ export function SwipeDeck({ movies, startIndex = 0, onSwipe, onToggleWatchlist, 
     <div className="flex h-[100dvh] w-full select-none flex-col items-center justify-center gap-6 bg-neutral-950 p-6">
       <button
         onClick={onLeave}
-        className="absolute left-6 top-6 z-50 text-[13px] font-medium tracking-wide text-white/40 transition-colors hover:text-white"
+        className="absolute left-1/2 top-[calc(env(safe-area-inset-top)+1.25rem)] z-50 -translate-x-1/2 rounded-full bg-white/10 px-4 py-1.5 text-[12px] font-semibold tracking-wide text-white/70 backdrop-blur-md ring-1 ring-white/20 transition active:scale-95 hover:bg-white/20 hover:text-white"
       >
         Exit Room
       </button>

@@ -110,6 +110,7 @@ export function useRoom(roomId: string, uid: string | null) {
       updateDoc(doc(db, 'rooms', roomId), {
         status: 'matched',
         matchedMovieId: finalMovieId,
+        matchedMovieIds: matches.map((m) => m.id),
         matchedAt: serverTimestamp(),
       })
         .catch(console.error)
