@@ -1,4 +1,4 @@
-import { useState, type FormEvent } from 'react';
+import { useMemo, useState, type FormEvent } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { AnimatePresence, motion } from 'framer-motion';
 import { Check, Copy, Share2 } from 'lucide-react';
@@ -6,36 +6,46 @@ import { useAnonAuth } from '@/features/auth/useAnonAuth';
 import { Screen, glassInput, primaryBtn, secondaryBtn } from '@/components/Screen';
 import { SwipeDeck } from '@/features/swipe/SwipeDeck';
 import { MatchScreen } from '@/features/match/MatchScreen';
-import { NoMatchScreen } from '@/features/match/NoMatchScreen';
 import { friendlyError } from '@/lib/async';
 import { useCopy } from '@/lib/copy';
 import { getSavedName, saveName } from '@/lib/storage';
-import type { MovieCard, Room, SwipeDoc } from '@/types/room';
+import type { Room } from '@/types/room';
 import { useRoom } from './useRoom';
-import { joinRoom, pickMovie, startRound } from './rooms.service';
+import { joinRoom, leaveRoom, startRound } from './rooms.service';
 
 const SPRING = { type: 'spring', stiffness: 300, damping: 28 } as const;
 
-/** Most-liked title so far, used by the deck's "Reveal top pick" button. */
-function mostLiked(room: Room, swipes: Record<string, SwipeDoc>): MovieCard | null {
-  let best: MovieCard | null = null;
-  let bestN = 0;
-  for (const m of room.deck) {
-    const n = Object.values(swipes).filter((s) => s.likes?.includes(m.id)).length;
-    if (n > bestN) { best = m; bestN = n; }
-  }
-  return best;
-}
-
 export function Lobby() {
+  const navigate = useNavigate();
   const { roomId = '' } = useParams<{ roomId: string }>();
   const { user } = useAnonAuth();
   const uid = user?.uid as string;
-  const { room, swipes, loading, matches, exhausted, closest, myProgress, recordSwipe } =
+  const { room, loading, matches, myProgress, recordSwipe } =
     useRoom(roomId, uid);
 
   const [starting, setStarting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  // Creates a truly random, unique deck order for this specific user.
+  const shuffledDeck = useMemo(() => {
+    if (!room?.deck) return [];
+    const deck = [...room.deck];
+
+    let seed = 0;
+    if (uid) {
+      for (let i = 0; i < uid.length; i++) {
+        seed = (seed << 5) - seed + uid.charCodeAt(i);
+        seed |= 0;
+      }
+    }
+
+    const random = () => {
+      const x = Math.sin(seed++) * 10000;
+      return x - Math.floor(x);
+    };
+
+    return deck.sort(() => random() - 0.5);
+  }, [room?.deck, room?.round, uid]);
 
   async function handleStart() {
     if (!room || starting) return;
@@ -49,6 +59,7 @@ export function Lobby() {
     } finally {
       setStarting(false);
     }
+
   }
 
   // ---- Loading / not found -------------------------------------------------
@@ -72,38 +83,58 @@ export function Lobby() {
     return <NameGate room={room} uid={uid} />;
   }
 
+  const handleLeave = async () => {
+    if (uid) {
+      await leaveRoom(room.id, uid);
+    }
+    navigate('/');
+  };
+
+  if (room.status !== 'waiting' && room.participantIds.length < 2) {
+    return (
+      <div className="grid min-h-[100dvh] place-items-center bg-neutral-950 p-6 text-center text-white">
+        <div className="flex w-full max-w-sm flex-col gap-4">
+          <div className="mx-auto grid h-16 w-16 place-items-center rounded-full bg-white/10 text-white/50 ring-1 ring-white/20">
+            <span className="text-2xl">👋</span>
+          </div>
+          <h1 className="text-2xl font-semibold tracking-tight">Your friend left</h1>
+          <p className="text-[15px] text-white/50">The other player exited the room.</p>
+          <button
+            onClick={() => {
+              if (uid) void leaveRoom(room.id, uid);
+              navigate('/');
+            }}
+            className="mt-4 rounded-full bg-rose-500 py-3.5 text-[15px] font-semibold text-white shadow-lg shadow-rose-500/25 transition active:scale-[0.97]"
+          >
+            Back to Home
+          </button>
+        </div>
+      </div>
+    );
+  }
+
   // ---- Game screens (unchanged components) ---------------------------------
   if (room.status === 'matched') {
-    return <MatchScreen room={room} isHost={isHost} onNextRound={handleStart} starting={starting} />;
+    return (
+      <MatchScreen
+        room={room}
+        isHost={isHost}
+        onNextRound={handleStart}
+        starting={starting}
+        uid={uid}
+        matches={matches}
+      />
+    );
   }
 
   if (room.status === 'swiping') {
-    if (exhausted && matches.length === 0) {
-      const likeCount = closest
-        ? Object.values(swipes).filter((s) => s.likes?.includes(closest.id)).length
-        : 0;
-      return (
-    <div className="grid min-h-[100dvh] place-items-center bg-neutral-950 p-6">
-      <NoMatchScreen 
-        room={room} 
-        closest={closest} 
-        likeCount={likeCount} 
-        isHost={isHost} 
-        onNextRound={handleStart} 
-        starting={starting} 
-      />
-    </div>
-  );
-    }
     return (
       <SwipeDeck
-        movies={room.deck}
+        key={room.round ?? 1}
+        movies={shuffledDeck}
         startIndex={myProgress}
         onSwipe={recordSwipe}
-        onEmpty={() => {
-          const top = mostLiked(room, swipes);
-          if (top) void pickMovie(room.id, top.id);
-        }}
+        onLeave={handleLeave}
       />
     );
   }

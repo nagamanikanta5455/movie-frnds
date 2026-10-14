@@ -51,7 +51,9 @@ const uid = user?.uid;
       setCodeError("That doesn't look like a room code or link.");
       return;
     }
-    // The Lobby shows the Name Gate for new guests and "Room not found" for bad codes.
+    const clean = name.trim();
+    if (clean) saveName(clean);
+
     navigate(`/r/${roomId}`);
   }
 

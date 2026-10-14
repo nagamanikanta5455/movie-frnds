@@ -22,6 +22,7 @@ export interface Room {
   participants: Record<string, { name: string; hue: number }>;
   deck: MovieCard[];
   matchedMovieId: number | null;
+  round?: number;
   createdAt: Timestamp;
 }
 
@@ -29,6 +30,7 @@ export interface SwipeDoc {
   likes: number[];
   superLikes: number[];
   progress: number;
+  round?: number;
 }
 
 export type Direction = 'left' | 'right' | 'up';

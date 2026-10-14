@@ -1,4 +1,4 @@
-import { doc, setDoc, serverTimestamp, updateDoc, arrayUnion } from 'firebase/firestore';
+import { arrayRemove, deleteField, doc, setDoc, serverTimestamp, updateDoc, arrayUnion } from 'firebase/firestore';
 import { db } from '@/lib/firebase';
 import { withTimeout } from '@/lib/async';
 import { buildDeck } from '@/features/tmdb/tmdb.client';
@@ -47,16 +47,29 @@ export async function pickMovie(roomId: string, movieId: number) {
 }
 
 export async function startRound(room: Room) {
-  const nextRound = Math.floor((room.deck?.length || 0) / 40) + 1;
-  const newMovies = await withTimeout(
-    buildDeck({ ...room.settings, round: nextRound }),
+  const nextRound = (room.round ?? 0) + 1;
+  const deck = await withTimeout(
+    buildDeck({
+      ...room.settings,
+      round: nextRound,
+      excludeIds: room.deck?.map((m) => m.id) ?? [],
+    }),
     12_000,
     'Loading movies',
   );
+  if (deck.length === 0) throw new Error('No movies matched these settings.');
 
   await updateDoc(doc(db, 'rooms', room.id), {
-    deck: [...(room.deck || []), ...newMovies],
+    deck,
+    round: nextRound,
     status: 'swiping',
     matchedMovieId: null,
+    matchedAt: deleteField(),
+  });
+}
+
+export async function leaveRoom(roomId: string, uid: string) {
+  await updateDoc(doc(db, 'rooms', roomId), {
+    participantIds: arrayRemove(uid),
   });
 }

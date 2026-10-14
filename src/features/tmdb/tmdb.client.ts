@@ -19,7 +19,13 @@ async function tmdb<T>(path: string, params: Record<string, string | number> = {
   }
 }
 
-export async function buildDeck(opts: { genreIds: number[]; providerIds: number[]; region: string; round?: number }): Promise<MovieCard[]> {
+export async function buildDeck(opts: {
+  genreIds: number[];
+  providerIds: number[];
+  region: string;
+  round?: number;
+  excludeIds?: number[];
+}): Promise<MovieCard[]> {
   const round = opts.round || 1;
   const startPage = (round - 1) * 3 + 1; // Round 1: pages 1,2,3. Round 2: pages 4,5,6.
 
@@ -29,6 +35,7 @@ export async function buildDeck(opts: { genreIds: number[]; providerIds: number[
       sort_by: 'popularity.desc',
       'vote_count.gte': 300,
       watch_region: opts.region,
+      ...(opts.excludeIds?.length && { without_ids: opts.excludeIds.join(',') }),
       ...(opts.genreIds.length && { with_genres: opts.genreIds.join('|') }),
       ...(opts.providerIds.length && { with_watch_providers: opts.providerIds.join('|') }),
     }),
@@ -36,7 +43,7 @@ export async function buildDeck(opts: { genreIds: number[]; providerIds: number[
 
   const seen = new Set<number>();
   return pages.flatMap((p) => p.results)
-    .filter((m) => m.poster_path && !seen.has(m.id) && seen.add(m.id))
+    .filter((m) => !opts.excludeIds?.includes(m.id) && m.poster_path && !seen.has(m.id) && seen.add(m.id))
     .slice(0, 40)
     .map((m) => ({
       id: m.id, title: m.title, year: (m.release_date ?? '').slice(0, 4),

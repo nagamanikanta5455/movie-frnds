@@ -9,10 +9,21 @@ const FLUSH_MS = 900;
 
 export function useRoom(roomId: string, uid: string | null) {
   const [room, setRoom] = useState<Room | null>(null);
-  const [swipes, setSwipes] = useState<Record<string, SwipeDoc>>({});
+  
+  // FIX: Tag the swipe docs with their exact round number so they never bleed across rounds
+  const [swipeState, setSwipeState] = useState<{ round: number; docs: Record<string, SwipeDoc> }>({ round: 0, docs: {} });
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<Error | null>(null);
   const [reconnecting, setReconnecting] = useState(false);
+  const pending = useRef({ likes: new Set<number>(), supers: new Set<number>(), progress: -1 });
+  const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const round = room?.round ?? 1;
+
+  // Compute a strict, round-matched swipes object (instantly clears when round bumps)
+  const swipes = useMemo(() => {
+    return swipeState.round === round ? swipeState.docs : {};
+  }, [swipeState, round]);
 
   useEffect(() => {
     if (!uid) return;
@@ -35,58 +46,77 @@ export function useRoom(roomId: string, uid: string | null) {
         setLoading(false);
       },
     );
+    
     const unsubSwipes = onSnapshot(
-      collection(db, 'rooms', roomId, 'swipes'),
+      collection(db, 'rooms', roomId, 'rounds', String(round), 'swipes'),
       (snap) => {
         const next: Record<string, SwipeDoc> = {};
-        snap.forEach((d) => (next[d.id] = d.data() as SwipeDoc));
-        setSwipes(next);
+        snap.forEach((d) => {
+          next[d.id] = d.data() as SwipeDoc;
+        });
+        // Update the state WITH the round tag attached
+        setSwipeState({ round, docs: next });
       },
-      setError,
+      (err) => {
+        console.error('[swipes listener error]', err);
+        setError(err);
+      }
     );
     return () => { unsubRoom(); unsubSwipes(); };
-  }, [roomId, uid]);
+  }, [roomId, uid, round]);
 
+  useEffect(() => {
+    pending.current = { likes: new Set(), supers: new Set(), progress: -1 };
+  }, [round]);
+
+  // ---- Derived matches ----------------------------------------------------
   const { matches, exhausted, closest } = useMemo(() => {
     if (!room || room.status === 'waiting') return { matches: [], exhausted: false, closest: null };
-    const ids = room.participantIds;
-    const likeSets = ids.map((id) => new Set(swipes[id]?.likes ?? []));
+    
+    const finishedIds = room.participantIds.filter((id) => (swipes[id]?.progress ?? 0) >= room.deck.length - 1);
+    const likeSets = finishedIds.map((id) => new Set(swipes[id].likes));
 
-    const matches: MovieCard[] =
-      ids.length >= 2 && ids.every((id) => swipes[id])
-        ? room.deck.filter((m) => likeSets.every((s) => s.has(m.id)))
-        : [];
-
-    const exhausted =
-      ids.length > 0 && ids.every((id) => (swipes[id]?.progress ?? 0) >= room.deck.length);
+    const matches: MovieCard[] = finishedIds.length >= 2
+      ? room.deck.filter((m) => likeSets.every((s) => s.has(m.id)))
+      : [];
 
     let closest: MovieCard | null = null;
-    // We removed 'exhausted &&' so it ALWAYS tracks the best match in real-time
-    if (matches.length === 0) {
-      let best = 0;
+    if (matches.length === 0 && finishedIds.length > 0) {
+      let best = -1;
       for (const m of room.deck) {
         const n = likeSets.filter((s) => s.has(m.id)).length;
         if (n > best) { best = n; closest = m; }
       }
     }
+
+    const isLocalFinished = uid ? finishedIds.includes(uid) : false;
+    const exhausted = room.participantIds.length > 1
+      ? isLocalFinished && finishedIds.length >= 2
+      : isLocalFinished;
+
     return { matches, exhausted, closest };
-  }, [room, swipes]);
+  }, [room, swipes, uid]);
 
+  // ---- Wait for EVERYONE to finish before flipping to 'matched' -----------
   const flipping = useRef(false);
-  useEffect(() => {
-    if (!room || room.status !== 'swiping' || matches.length === 0 || flipping.current) return;
-    flipping.current = true;
-    const ref = doc(db, 'rooms', roomId);
-    
-    updateDoc(ref, {
-      status: 'matched',
-      matchedMovieId: matches[0].id,
-      matchedAt: serverTimestamp(),
-    }).catch(console.error).finally(() => { flipping.current = false; });
-  }, [room, matches, roomId]);
-  const pending = useRef({ likes: new Set<number>(), supers: new Set<number>(), progress: -1 });
-  const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
+  useEffect(() => {
+    if (!room || room.status !== 'swiping' || flipping.current) return;
+
+    if (exhausted) {
+      flipping.current = true;
+      const finalMovieId = matches.length > 0 ? matches[0].id : (closest?.id || room.deck[0]?.id);
+
+      updateDoc(doc(db, 'rooms', roomId), {
+        status: 'matched',
+        matchedMovieId: finalMovieId,
+        matchedAt: serverTimestamp(),
+      })
+        .catch(console.error)
+        .finally(() => { flipping.current = false; });
+    }
+  }, [room, matches, exhausted, closest, roomId]);
+  
   const flush = useCallback(async () => {
     timer.current = null;
     if (!uid) return;
@@ -99,14 +129,15 @@ export function useRoom(roomId: string, uid: string | null) {
     if (snap.supers.size) payload.superLikes = arrayUnion(...snap.supers);
 
     try {
-      await setDoc(doc(db, 'rooms', roomId, 'swipes', uid), payload, { merge: true });
+      await setDoc(doc(db, 'rooms', roomId, 'rounds', String(round), 'swipes', uid), payload, { merge: true });
     } catch (e) {
+      console.error('[swipe flush failed]', e);
       snap.likes.forEach((id) => pending.current.likes.add(id));
       snap.supers.forEach((id) => pending.current.supers.add(id));
       pending.current.progress = Math.max(pending.current.progress, snap.progress);
       timer.current = setTimeout(flush, FLUSH_MS * 2);
     }
-  }, [roomId, uid]);
+  }, [roomId, uid, round]);
 
   const recordSwipe = useCallback(
     (movie: MovieCard, dir: Direction, nextIndex: number) => {

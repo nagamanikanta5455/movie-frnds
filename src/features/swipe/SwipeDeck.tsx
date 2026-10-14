@@ -29,10 +29,10 @@ interface DeckProps {
   startIndex?: number;
   onSwipe: (movie: MovieCard, dir: Direction, nextIndex: number) => void;
   onToggleWatchlist?: (movie: MovieCard) => void;
-  onEmpty?: () => void;
+  onLeave: () => void;
 }
 
-export function SwipeDeck({ movies, startIndex = 0, onSwipe, onToggleWatchlist, onEmpty }: DeckProps) {
+export function SwipeDeck({ movies, startIndex = 0, onSwipe, onToggleWatchlist, onLeave }: DeckProps) {
   const [index, setIndex] = useState(startIndex);
   const [exitDir, setExitDir] = useState<Direction>('right');
 
@@ -74,8 +74,38 @@ export function SwipeDeck({ movies, startIndex = 0, onSwipe, onToggleWatchlist, 
   const visible = movies.slice(index, index + VISIBLE);
   const done = index >= movies.length;
 
+  if (done) {
+    return (
+      <div className="flex min-h-[100dvh] flex-col items-center justify-center bg-neutral-950 p-6 text-center text-white">
+        <div className="flex w-full max-w-sm flex-col items-center">
+          <h2 className="mb-2 text-xl font-semibold tracking-tight">You've seen everything.</h2>
+          <p className="mb-10 text-[15px] text-white/50">Waiting for your friend to finish swiping...</p>
+
+          <div className="mb-12 flex space-x-2.5 opacity-60">
+            <div className="h-2.5 w-2.5 animate-bounce rounded-full bg-white" style={{ animationDelay: '0s' }} />
+            <div className="h-2.5 w-2.5 animate-bounce rounded-full bg-white" style={{ animationDelay: '0.15s' }} />
+            <div className="h-2.5 w-2.5 animate-bounce rounded-full bg-white" style={{ animationDelay: '0.3s' }} />
+          </div>
+
+          <button
+            onClick={onLeave}
+            className="mt-8 text-[13px] font-medium text-white/40 transition-colors hover:text-white"
+          >
+            Exit Room
+          </button>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="flex h-[100dvh] w-full select-none flex-col items-center justify-center gap-6 bg-neutral-950 p-6">
+      <button
+        onClick={onLeave}
+        className="absolute left-6 top-6 z-50 text-[13px] font-medium tracking-wide text-white/40 transition-colors hover:text-white"
+      >
+        Exit Room
+      </button>
       <div className="relative mx-auto aspect-[2/3] max-h-[70vh] w-full max-w-sm flex-1">
         <AnimatePresence custom={exitDir}>
           {visible
@@ -85,25 +115,6 @@ export function SwipeDeck({ movies, startIndex = 0, onSwipe, onToggleWatchlist, 
             .reverse()}
         </AnimatePresence>
 
-        {done && (
-          <div className="absolute inset-0 grid place-items-center rounded-[2rem] bg-white/5 text-center ring-1 ring-inset ring-white/10 backdrop-blur-2xl backdrop-saturate-150">
-            <div className="space-y-5 px-8">
-              <p className="text-lg font-medium tracking-tight text-white/70">
-                You've seen everything.
-                <br />
-                <span className="text-white/40">Waiting for your friends…</span>
-              </p>
-              {onEmpty && (
-                <button
-                  onClick={onEmpty}
-                  className="rounded-full bg-white px-6 py-2.5 text-sm font-semibold text-black transition active:scale-95"
-                >
-                  Reveal top pick
-                </button>
-              )}
-            </div>
-          </div>
-        )}
       </div>
 
       <ActionBar
